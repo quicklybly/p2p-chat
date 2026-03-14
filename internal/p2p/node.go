@@ -9,6 +9,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/quicklybly/p2p-chat/internal/config"
+	"time"
 )
 
 type Node struct {
@@ -53,6 +54,47 @@ func NewNode(ctx context.Context, cfg config.P2PConfig) (*Node, error) {
 	}
 
 	return &Node{Host: h, DHT: kdht}, nil
+}
+
+func (n *Node) Provide(ctx context.Context, key []byte) error {
+	cid, err := createCID(key)
+
+	if err != nil {
+		return fmt.Errorf("failed to create CID: %w", err)
+	}
+
+	err = n.DHT.Provide(ctx, cid, true)
+	if err != nil {
+		return fmt.Errorf("failed to provide: %w", err)
+	}
+
+	fmt.Printf("Provided key: %s\n", cid.String())
+	return nil
+}
+
+func (n *Node) FindProviders(ctx context.Context, key []byte) ([]peer.AddrInfo, error) {
+	cid, err := createCID(key)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to create CID: %w", err)
+	}
+
+	timeout, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	peers := make([]peer.AddrInfo, 0)
+
+	for pi := range n.DHT.FindProvidersAsync(timeout, cid, 20) {
+		if pi.ID == n.Host.ID() {
+			continue
+		}
+		peers = append(peers, pi)
+	}
+	return peers, nil
+}
+
+func (n *Node) ConnectToPeer(ctx context.Context, pi peer.AddrInfo) error {
+	return n.Host.Connect(ctx, pi)
 }
 
 func (n *Node) ID() peer.ID {
