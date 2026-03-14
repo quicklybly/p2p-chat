@@ -19,6 +19,7 @@ import (
 func main() {
 	bootstrap := flag.String("bootstrap", "", "comma-separated bootstrap peer addresses")
 	room := flag.String("room", "", "room name to provide/find")
+	port := flag.Int("port", 0, "listen port (0 for random)")
 	flag.Parse()
 
 	fmt.Println("P2P Chat v0.1")
@@ -27,6 +28,7 @@ func main() {
 	defer cancel()
 
 	cfg := config.Load()
+	cfg.P2P.Port = *port
 
 	if *bootstrap != "" {
 		cfg.P2P.BootstrapPeers = strings.Split(*bootstrap, ",")

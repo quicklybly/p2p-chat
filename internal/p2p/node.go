@@ -19,8 +19,8 @@ type Node struct {
 }
 
 func NewNode(ctx context.Context, cfg config.P2PConfig) (*Node, error) {
-	listenAddrs := make([]multiaddr.Multiaddr, 0, len(cfg.ListenAddrs))
-	for _, s := range cfg.ListenAddrs {
+	listenAddrs := make([]multiaddr.Multiaddr, 0)
+	for _, s := range cfg.ListenAddrs() {
 		ma, err := multiaddr.NewMultiaddr(s)
 		if err != nil {
 			return nil, fmt.Errorf("invalid listen addr %s: %w", s, err)
