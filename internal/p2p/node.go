@@ -13,8 +13,9 @@ import (
 )
 
 type Node struct {
-	Host host.Host
-	DHT  *dht.IpfsDHT
+	Host   host.Host
+	DHT    *dht.IpfsDHT
+	PubSub *PubSubService
 }
 
 func NewNode(ctx context.Context, cfg config.P2PConfig) (*Node, error) {
@@ -53,7 +54,13 @@ func NewNode(ctx context.Context, cfg config.P2PConfig) (*Node, error) {
 		return nil, fmt.Errorf("failed to create DHT: %w", err)
 	}
 
-	return &Node{Host: h, DHT: kdht}, nil
+	// pubsub
+	ps, err := NewPubSub(ctx, h)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pubsub: %w", err)
+	}
+
+	return &Node{Host: h, DHT: kdht, PubSub: ps}, nil
 }
 
 func (n *Node) Provide(ctx context.Context, key []byte) error {

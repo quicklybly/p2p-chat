@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"flag"
@@ -39,7 +40,12 @@ func main() {
 
 	node.PrintInfo()
 
+	if *room == "" {
+		log.Fatal("--room is required")
+	}
+
 	testProvideFind(room, node, ctx)
+	launchPubSub(ctx, node, room)
 
 	waitForShutdownSignal()
 	fmt.Println("\nShutting down...")
@@ -54,36 +60,85 @@ func waitForShutdownSignal() {
 }
 
 func testProvideFind(room *string, node *p2p.Node, ctx context.Context) {
-	if *room != "" {
-		go func() {
-			key := sha256.Sum256([]byte("room:" + *room))
+	go func() {
+		key := sha256.Sum256([]byte("room:" + *room))
 
-			// wait for peers before providing
-			fmt.Println("\nWaiting for peers in DHT...")
-			waitForPeers(ctx, node)
+		fmt.Println("\nWaiting for peers in DHT...")
+		waitForPeers(ctx, node)
 
-			fmt.Printf("Providing room: %s\n", *room)
-			if err := node.Provide(ctx, key[:]); err != nil {
-				fmt.Printf("Failed to provide: %s\n", err)
-				return
+		fmt.Printf("Providing room: %s\n", *room)
+		if err := node.Provide(ctx, key[:]); err != nil {
+			fmt.Printf("Failed to provide: %s\n", err)
+			return
+		}
+		fmt.Println("Provided successfully")
+
+		time.Sleep(2 * time.Second)
+
+		fmt.Printf("Searching for room: %s\n", *room)
+		peers, err := node.FindProviders(ctx, key[:])
+		if err != nil {
+			fmt.Printf("Failed to find providers: %s\n", err)
+			return
+		}
+
+		fmt.Printf("Found %d providers:\n", len(peers))
+		for _, p := range peers {
+			fmt.Printf("  Connecting to %s\n", p.ID)
+			if err := node.ConnectToPeer(ctx, p); err != nil {
+				fmt.Printf("  Failed: %s\n", err)
+			} else {
+				fmt.Printf("  Connected to %s\n", p.ID)
 			}
-			fmt.Println("Provided successfully")
+		}
+	}()
+}
 
-			time.Sleep(2 * time.Second)
-
-			fmt.Printf("Searching for room: %s\n", *room)
-			peers, err := node.FindProviders(ctx, key[:])
-			if err != nil {
-				fmt.Printf("Failed to find providers: %s\n", err)
-				return
-			}
-
-			fmt.Printf("Found %d providers:\n", len(peers))
-			for _, p := range peers {
-				fmt.Printf("  %s\n", p.ID)
-			}
-		}()
+func launchPubSub(ctx context.Context, node *p2p.Node, room *string) {
+	topic, err := node.PubSub.Join(*room)
+	if err != nil {
+		log.Fatal(err)
 	}
+
+	sub, err := node.PubSub.Subscribe(topic)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("\nJoined room: %s\n", *room)
+	fmt.Println("Type a message and press Enter to send.\n")
+
+	// read incoming messages
+	go func() {
+		for {
+			msg, err := sub.Next(ctx)
+			if err != nil {
+				return
+			}
+			if msg.ReceivedFrom == node.ID() {
+				continue
+			}
+			fmt.Printf("\n[%s]: %s\n> ", msg.ReceivedFrom.String()[:8], string(msg.Data))
+		}
+	}()
+
+	// read stdin and publish
+	scanner := bufio.NewScanner(os.Stdin)
+	fmt.Print("> ")
+
+	go func() {
+		for scanner.Scan() {
+			text := scanner.Text()
+			if text == "" {
+				fmt.Print("> ")
+				continue
+			}
+			if err := node.PubSub.Publish(ctx, topic, []byte(text)); err != nil {
+				fmt.Printf("Failed to send: %s\n", err)
+			}
+			fmt.Print("> ")
+		}
+	}()
 }
 
 func waitForPeers(ctx context.Context, node *p2p.Node) {
