@@ -21,7 +21,7 @@ func Load() Config {
 				"/ip4/0.0.0.0/udp/0/quic-v1",
 			},
 			BootstrapPeers:    []string{},
-			EnableMDNS:        true,
+			EnableMDNS:        false,
 			ReProvideInterval: 10 * time.Minute,
 		},
 	}
