@@ -175,16 +175,15 @@ func (s *Service) setupRoom(ctx context.Context, name string, secret []byte) (*d
 
 func (s *Service) provideLoop(ctx context.Context, room *domain.Room) {
 	for {
+		err := s.node.Provide(ctx, room.DiscoveryKey)
+		if err != nil {
+			fmt.Printf("Warning: provide room '%s': %s\n", room.Name, err)
+		}
+
 		select {
 		case <-ctx.Done():
 			return
-		default:
-			err := s.node.Provide(ctx, room.DiscoveryKey)
-			if err == nil {
-				fmt.Printf("Room '%s' provided to DHT\n", room.Name)
-				return
-			}
-			time.Sleep(3 * time.Second)
+		case <-time.After(10 * time.Minute):
 		}
 	}
 }
