@@ -2,7 +2,7 @@ services:
   node1:
     build:
       context: .
-    command: ["--room", "dev", "--port", "9000"]
+    command: ["--port", "9000"]
     stdin_open: true
     tty: true
     networks:
@@ -11,7 +11,7 @@ services:
   node2:
     build:
       context: .
-    command: ["--room", "dev", "--port", "9000", "--bootstrap", "${BOOTSTRAP}"]
+    command: ["--port", "9000", "--bootstrap", "${BOOTSTRAP}"]
     stdin_open: true
     tty: true
     networks:
@@ -20,7 +20,7 @@ services:
   node3:
     build:
       context: .
-    command: ["--room", "dev", "--port", "9000", "--bootstrap", "${BOOTSTRAP}"]
+    command: ["--port", "9000", "--bootstrap", "${BOOTSTRAP}"]
     stdin_open: true
     tty: true
     networks:

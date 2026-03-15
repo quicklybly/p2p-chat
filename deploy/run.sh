@@ -21,7 +21,6 @@ NODE1_ID=$(docker compose -f deploy/docker-compose.yml logs --no-color node1 2>&
 
 if [ -z "$NODE1_ID" ]; then
     echo "ERROR: Could not get node1 PeerID"
-    echo "=== node1 logs ==="
     docker compose -f deploy/docker-compose.yml logs node1
     exit 1
 fi
@@ -29,7 +28,7 @@ fi
 echo "Node1 PeerID: $NODE1_ID"
 
 BOOTSTRAP="/dns4/node1/tcp/9000/p2p/$NODE1_ID"
-echo "Bootstrap addr: $BOOTSTRAP"
+echo "Bootstrap: $BOOTSTRAP"
 
 echo "=== Starting node2 and node3 ==="
 BOOTSTRAP=$BOOTSTRAP docker compose -f deploy/docker-compose.yml up -d node2 node3
@@ -38,9 +37,14 @@ sleep 3
 echo ""
 echo "=== All nodes running ==="
 echo ""
-echo "  Logs:     docker compose -f deploy/docker-compose.yml logs -f"
-echo "  Attach:   docker compose -f deploy/docker-compose.yml attach node1"
-echo "  Stop:     docker compose -f deploy/docker-compose.yml down"
+echo "Usage:"
+echo "  1. Attach to node1:  docker compose -f deploy/docker-compose.yml attach node1"
+echo "  2. Create room:      /create dev"
+echo "  3. Copy invite"
+echo "  4. Attach to node2:  docker compose -f deploy/docker-compose.yml attach node2"
+echo "  5. Join room:        /join <invite>"
+echo "  6. Send messages"
 echo ""
-echo "=== Recent logs ==="
-docker compose -f deploy/docker-compose.yml logs --tail=20
+echo "  Detach: Ctrl+P, Ctrl+Q"
+echo "  Logs:   docker compose -f deploy/docker-compose.yml logs -f"
+echo "  Stop:   docker compose -f deploy/docker-compose.yml down"
