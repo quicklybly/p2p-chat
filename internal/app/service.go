@@ -162,10 +162,8 @@ func (s *Service) setupRoom(ctx context.Context, name string, secret []byte) (*d
 		AESKey:       keys.AESKey,
 	}
 
-	// provide to dht
-	if err := s.node.Provide(ctx, room.DiscoveryKey); err != nil {
-		fmt.Printf("Warning: provide: %s\n", err)
-	}
+	// provide to dht in background
+	go s.provideLoop(ctx, room)
 
 	// subscribe to topic
 	if err := s.node.Subscribe(ctx, room.Topic, s.makeTopicHandler(room)); err != nil {
@@ -173,6 +171,22 @@ func (s *Service) setupRoom(ctx context.Context, name string, secret []byte) (*d
 	}
 
 	return room, nil
+}
+
+func (s *Service) provideLoop(ctx context.Context, room *domain.Room) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			err := s.node.Provide(ctx, room.DiscoveryKey)
+			if err == nil {
+				fmt.Printf("Room '%s' provided to DHT\n", room.Name)
+				return
+			}
+			time.Sleep(3 * time.Second)
+		}
+	}
 }
 
 func (s *Service) makeTopicHandler(room *domain.Room) func(senderID string, data []byte) {
