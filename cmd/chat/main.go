@@ -3,10 +3,11 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
 	"flag"
 	"fmt"
+	"github.com/quicklybly/p2p-chat/internal/app"
 	"github.com/quicklybly/p2p-chat/internal/config"
+	"github.com/quicklybly/p2p-chat/internal/domain"
 	"github.com/quicklybly/p2p-chat/internal/p2p"
 	"log"
 	"os"
@@ -17,9 +18,8 @@ import (
 )
 
 func main() {
-	bootstrap := flag.String("bootstrap", "", "comma-separated bootstrap peer addresses")
-	room := flag.String("room", "", "room name to provide/find")
-	port := flag.Int("port", 0, "listen port (0 for random)")
+	bootstrap := flag.String("bootstrap", "", "bootstrap peer address")
+	port := flag.Int("port", 0, "listen port (0 = random)")
 	flag.Parse()
 
 	fmt.Println("P2P Chat v0.1")
@@ -42,12 +42,26 @@ func main() {
 
 	node.PrintInfo()
 
-	if *room == "" {
-		log.Fatal("--room is required")
+	if len(cfg.P2P.BootstrapPeers) > 0 {
+		waitForPeers(ctx, node)
 	}
 
-	testProvideFind(room, node, ctx)
-	launchPubSub(ctx, node, room)
+	service := app.NewService(node)
+
+	service.OnMessage(func(msg domain.Message) {
+		fmt.Printf("\n[%s] %s: %s\n> ",
+			msg.RoomName,
+			msg.SenderID[:8],
+			msg.Text)
+	})
+
+	printHelp()
+
+	var activeRoom string
+	scanner := bufio.NewScanner(os.Stdin)
+	fmt.Print("> ")
+
+	cli(scanner, activeRoom, service, ctx)
 
 	waitForShutdownSignal()
 	fmt.Println("\nShutting down...")
@@ -61,82 +75,88 @@ func waitForShutdownSignal() {
 	<-signalChannel
 }
 
-func testProvideFind(room *string, node *p2p.Node, ctx context.Context) {
-	go func() {
-		key := sha256.Sum256([]byte("room:" + *room))
-
-		fmt.Println("\nWaiting for peers in DHT...")
-		waitForPeers(ctx, node)
-
-		fmt.Printf("Providing room: %s\n", *room)
-		if err := node.Provide(ctx, key[:]); err != nil {
-			fmt.Printf("Failed to provide: %s\n", err)
-			return
-		}
-		fmt.Println("Provided successfully")
-
-		time.Sleep(2 * time.Second)
-
-		fmt.Printf("Searching for room: %s\n", *room)
-		peers, err := node.FindProviders(ctx, key[:])
-		if err != nil {
-			fmt.Printf("Failed to find providers: %s\n", err)
-			return
-		}
-
-		fmt.Printf("Found %d providers:\n", len(peers))
-		for _, p := range peers {
-			fmt.Printf("  Connecting to %s\n", p.ID)
-			if err := node.ConnectToPeer(ctx, p); err != nil {
-				fmt.Printf("  Failed: %s\n", err)
-			} else {
-				fmt.Printf("  Connected to %s\n", p.ID)
-			}
-		}
-	}()
+func printHelp() {
+	fmt.Println("\nCommands:")
+	fmt.Println("  /create <name>  - create room")
+	fmt.Println("  /join <invite>  - join room")
+	fmt.Println("  /rooms          - list rooms")
+	fmt.Println("  /switch <name>  - switch room")
+	fmt.Println("  /leave <name>   - leave room")
+	fmt.Println("  <text>          - send message")
+	fmt.Println()
 }
 
-func launchPubSub(ctx context.Context, node *p2p.Node, room *string) {
-	topic, err := node.PubSub.Join(*room)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	sub, err := node.PubSub.Subscribe(topic)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Printf("\nJoined room: %s\n", *room)
-	fmt.Println("Type a message and press Enter to send.\n")
-
-	// read incoming messages
-	go func() {
-		for {
-			msg, err := sub.Next(ctx)
-			if err != nil {
-				return
-			}
-			if msg.ReceivedFrom == node.ID() {
-				continue
-			}
-			fmt.Printf("\n[%s]: %s\n> ", msg.ReceivedFrom.String()[:8], string(msg.Data))
-		}
-	}()
-
-	// read stdin and publish
-	scanner := bufio.NewScanner(os.Stdin)
-	fmt.Print("> ")
-
+func cli(scanner *bufio.Scanner, activeRoom string, service *app.Service, ctx context.Context) {
 	go func() {
 		for scanner.Scan() {
-			text := scanner.Text()
-			if text == "" {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
 				fmt.Print("> ")
 				continue
 			}
-			if err := node.PubSub.Publish(ctx, topic, []byte(text)); err != nil {
-				fmt.Printf("Failed to send: %s\n", err)
+			switch {
+
+			case strings.HasPrefix(line, "/create "):
+				name := strings.TrimPrefix(line, "/create ")
+				invite, err := service.CreateRoom(ctx, name)
+				if err != nil {
+					fmt.Printf("Error: %s\n", err)
+				} else {
+					activeRoom = name
+					fmt.Printf("Room '%s' created\n", name)
+					fmt.Printf("Invite: %s\n", invite)
+				}
+
+			case strings.HasPrefix(line, "/join "):
+				inviteStr := strings.TrimPrefix(line, "/join ")
+				roomName, err := service.JoinRoom(ctx, inviteStr)
+				if err != nil {
+					fmt.Printf("Error: %s\n", err)
+				} else {
+					activeRoom = roomName
+				}
+
+			case line == "/rooms":
+				rooms := service.Rooms()
+				if len(rooms) == 0 {
+					fmt.Println("No rooms")
+				}
+				for _, r := range rooms {
+					marker := " "
+					if r == activeRoom {
+						marker = "*"
+					}
+					fmt.Printf("  %s %s\n", marker, r)
+				}
+
+			case strings.HasPrefix(line, "/switch "):
+				name := strings.TrimPrefix(line, "/switch ")
+				if service.HasRoom(name) {
+					activeRoom = name
+					fmt.Printf("Switched to '%s'\n", name)
+				} else {
+					fmt.Printf("Room '%s' not found\n", name)
+				}
+
+			case strings.HasPrefix(line, "/leave "):
+				name := strings.TrimPrefix(line, "/leave ")
+				if err := service.LeaveRoom(name); err != nil {
+					fmt.Printf("Error: %s\n", err)
+				} else {
+					fmt.Printf("Left room '%s'\n", name)
+					if activeRoom == name {
+						activeRoom = ""
+					}
+				}
+
+			default:
+				if activeRoom == "" {
+					fmt.Println("No active room. Use /create or /join")
+				} else {
+					if err := service.SendMessage(ctx, activeRoom, line); err != nil {
+						fmt.Printf("Error: %s\n", err)
+					}
+				}
 			}
 			fmt.Print("> ")
 		}
