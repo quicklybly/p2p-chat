@@ -104,6 +104,14 @@ func (n *Node) ConnectToPeer(ctx context.Context, pi peer.AddrInfo) error {
 	return n.Host.Connect(ctx, pi)
 }
 
+func (n *Node) Subscribe(ctx context.Context, topic string, handler func(senderID string, data []byte)) error {
+	return n.PubSub.Subscribe(ctx, topic, handler)
+}
+
+func (n *Node) Publish(ctx context.Context, topic string, data []byte) error {
+	return n.PubSub.Publish(ctx, topic, data)
+}
+
 func (n *Node) ID() peer.ID {
 	return n.Host.ID()
 }
